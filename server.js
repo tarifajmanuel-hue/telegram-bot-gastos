@@ -393,6 +393,12 @@ async function agregarTarea(categoria, prioridad, tarea) {
 }
 
 async function agregarTareaUrgente(categoria, tarea) {
+  console.log('=== DEBUG agregarTareaUrgente ===');
+  console.log('SHEET_ID:', SHEET_ID);
+  console.log('CLIENT_EMAIL:', SERVICE_ACCOUNT.client_email);
+  console.log('PRIVATE_KEY existe?', !!SERVICE_ACCOUNT.private_key);
+  console.log('PRIVATE_KEY primeros 50 chars:', SERVICE_ACCOUNT.private_key ? SERVICE_ACCOUNT.private_key.substring(0, 50) : 'VACIO');
+  
   const doc = new GoogleSpreadsheet(SHEET_ID, new JWT(SERVICE_ACCOUNT));
   await doc.loadInfo();
   
