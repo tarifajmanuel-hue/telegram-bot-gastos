@@ -18,12 +18,13 @@ const auth = new google.auth.GoogleAuth({
   },
   scopes: [
     'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/tasks'
+    'https://www.googleapis.com/auth/calendar'
   ]
 });
 
 const sheets = google.sheets({ version: 'v4', auth });
-const tasks = google.tasks({ version: 'v1', auth });
+const calendar = google.calendar({ version: 'v3', auth });
+const CALENDAR_ID = '2d53b8a8e363449f4651cfde31f393c83dbb300968aec2d84ad1f645b48ed860@group.calendar.google.com';
 
 // Contextos en memoria
 const contextos = {};
@@ -352,14 +353,14 @@ async function finalizarTarea(chatId, userId, datos) {
 async function finalizarTareaUrgente(chatId, userId, datos) {
   try {
     await agregarTareaUrgente(datos.categoria, datos.tarea);
-    await crearTareaEnTasks(datos.categoria, datos.tarea);
+    await crearEventoCalendar(datos.categoria, datos.tarea);
     
     await enviarMensaje(chatId, 
       `✅ Tarea URGENTE guardada!\n\n` +
       `🔴 ${datos.tarea}\n` +
       `🏷️ ${datos.categoria}\n\n` +
       `✓ Guardada en Sheet\n` +
-      `✓ Agregada a Google Tasks`
+      `✓ Agregada a Calendar`
     );
   } catch (error) {
     console.error('Error al guardar tarea urgente:', error);
@@ -451,29 +452,30 @@ async function agregarTareaUrgente(categoria, tarea) {
 }
 
 // ============================================
-// GOOGLE TASKS
+// GOOGLE CALENDAR
 // ============================================
 
-async function crearTareaEnTasks(categoria, tarea) {
-  try {
-    // Primero obtener la lista de tareas por defecto
-    const taskLists = await tasks.tasklists.list();
-    const defaultList = taskLists.data.items[0].id;
-    
-    const hoy = new Date();
-    
-    await tasks.tasks.insert({
-      tasklist: defaultList,
-      resource: {
-        title: `🔴 ${categoria} - ${tarea}`,
-        notes: 'Tarea urgente creada desde Telegram',
-        due: hoy.toISOString()
-      }
-    });
-  } catch (error) {
-    console.error('Error al crear tarea en Google Tasks:', error);
-    throw error;
-  }
+async function crearEventoCalendar(categoria, tarea) {
+  const hoy = new Date();
+  const mañana = new Date(hoy);
+  mañana.setDate(mañana.getDate() + 1);
+  
+  const event = {
+    summary: `🔴 ${categoria} - ${tarea}`,
+    description: 'Tarea urgente creada desde Telegram',
+    start: {
+      date: hoy.toISOString().split('T')[0]
+    },
+    end: {
+      date: mañana.toISOString().split('T')[0]
+    },
+    colorId: '11' // Rojo
+  };
+  
+  await calendar.events.insert({
+    calendarId: CALENDAR_ID,
+    resource: event
+  });
 }
 
 // ============================================
