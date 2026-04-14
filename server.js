@@ -8,7 +8,12 @@ app.use(express.json());
 
 const TELEGRAM_TOKEN = '8400560729:AAHQbx4JthWEr8o3dccoUJgDw2lSnV_JO24';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
-
+// DEBUG - Ver variables de entorno
+console.log('=== VARIABLES DE ENTORNO ===');
+console.log('SHEET_ID existe?', !!process.env.SHEET_ID);
+console.log('GOOGLE_CLIENT_EMAIL existe?', !!process.env.GOOGLE_CLIENT_EMAIL);
+console.log('GOOGLE_PRIVATE_KEY existe?', !!process.env.GOOGLE_PRIVATE_KEY);
+console.log('GOOGLE_PRIVATE_KEY length:', process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.length : 0);
 // Configuración de Google Sheets
 const SHEET_ID = process.env.SHEET_ID;
 const SERVICE_ACCOUNT = {
