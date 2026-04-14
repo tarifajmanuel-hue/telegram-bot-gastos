@@ -7,6 +7,7 @@ app.use(express.json());
 
 const TELEGRAM_TOKEN = '8400560729:AAHQbx4JthWEr8o3dccoUJgDw2lSnV_JO24';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
+const GEMINI_API_KEY = 'AIzaSyD5pMc74tA8K9kkklsxFOKzPqe1J-yPQ1E';
 
 // Configuración de Google
 const SHEET_ID = process.env.SHEET_ID;
@@ -155,7 +156,7 @@ async function procesarBoton(chatId, userId, data, messageId, callbackId) {
   // TAREAS
   if (data.startsWith('tarea_cat_')) {
     const num = parseInt(data.split('_')[2]);
-    const categorias = ['Casa', 'Auto', 'Facultad', 'Trabajo', 'Salud'];
+    const categorias = ['Auto - Plata', 'Auto - Tiempo', 'Casa', 'Casa - Plata', 'Estandarización', 'Personal', 'Personas', 'Salud', 'Trabajo', 'Facultad'];
     contexto.datos.categoria = categorias[num - 1];
     
     await editarMensaje(chatId, messageId, '📁 Categoría: ' + categorias[num - 1]);
@@ -251,12 +252,61 @@ async function iniciarTarea(chatId, mensaje, userId) {
   const esUrgente = mensaje.toLowerCase().includes('urgente');
   const tarea = mensaje.replace(/urgente/gi, '').trim();
   
+  // Analizar con Gemini
+  const analisis = await analizarTareaConGemini(mensaje);
+  
+  // Si Gemini detectó categoría, usarla automáticamente
+  if (analisis.categoria) {
+    const categorias = ['Auto - Plata', 'Auto - Tiempo', 'Casa', 'Casa - Plata', 'Estandarización', 'Personal', 'Personas', 'Salud', 'Trabajo', 'Facultad'];
+    
+    if (categorias.includes(analisis.categoria)) {
+      const fecha = parsearFecha(analisis.fecha, analisis.hora);
+      
+      contextos[userId] = { 
+        tipo: 'TAREA', 
+        esperando: 'PRIORIDAD', 
+        datos: { 
+          tarea, 
+          urgente: esUrgente,
+          categoria: analisis.categoria,
+          fecha: fecha,
+          duracion: analisis.duracion
+        } 
+      };
+      
+      if (!esUrgente) {
+        const botonesPrioridad = [
+          [{text: '🔴 Urgente', callback_data: 'tarea_prio_1'}],
+          [{text: '🟠 Alta', callback_data: 'tarea_prio_2'}],
+          [{text: '🟡 Media', callback_data: 'tarea_prio_3'}],
+          [{text: '🟢 Baja', callback_data: 'tarea_prio_4'}]
+        ];
+        
+        await enviarMensajeConBotones(chatId, 
+          `📝 Tarea: "${tarea}"\n📁 Categoría: ${analisis.categoria}${fecha ? `\n📅 Fecha: ${fecha.toLocaleDateString('es-AR')}` : ''}\n\n¿Qué prioridad?`, 
+          botonesPrioridad
+        );
+      } else {
+        contextos[userId].datos.prioridad = 'Urgente';
+        await finalizarTareaUrgente(chatId, userId, contextos[userId].datos);
+      }
+      
+      return;
+    }
+  }
+  
+  // Si Gemini no detectó, preguntar manualmente
   const botones = [
-    [{text: '🏠 Casa', callback_data: 'tarea_cat_1'}],
-    [{text: '🚗 Auto', callback_data: 'tarea_cat_2'}],
-    [{text: '🎓 Facultad', callback_data: 'tarea_cat_3'}],
-    [{text: '💼 Trabajo', callback_data: 'tarea_cat_4'}],
-    [{text: '💊 Salud', callback_data: 'tarea_cat_5'}]
+    [{text: '💰 Auto - Plata', callback_data: 'tarea_cat_1'}],
+    [{text: '⏱️ Auto - Tiempo', callback_data: 'tarea_cat_2'}],
+    [{text: '🏠 Casa', callback_data: 'tarea_cat_3'}],
+    [{text: '💵 Casa - Plata', callback_data: 'tarea_cat_4'}],
+    [{text: '📋 Estandarización', callback_data: 'tarea_cat_5'}],
+    [{text: '👤 Personal', callback_data: 'tarea_cat_6'}],
+    [{text: '👥 Personas', callback_data: 'tarea_cat_7'}],
+    [{text: '💊 Salud', callback_data: 'tarea_cat_8'}],
+    [{text: '💼 Trabajo', callback_data: 'tarea_cat_9'}],
+    [{text: '🎓 Facultad', callback_data: 'tarea_cat_10'}]
   ];
   
   await enviarMensajeConBotones(chatId, 
@@ -353,15 +403,19 @@ async function finalizarTarea(chatId, userId, datos) {
 async function finalizarTareaUrgente(chatId, userId, datos) {
   try {
     await agregarTareaUrgente(datos.categoria, datos.tarea);
-    await crearEventoCalendar(datos.categoria, datos.tarea);
+    await crearEventoCalendar(datos.categoria, datos.tarea, datos.fecha, datos.duracion);
     
-    await enviarMensaje(chatId, 
-      `✅ Tarea URGENTE guardada!\n\n` +
-      `🔴 ${datos.tarea}\n` +
-      `🏷️ ${datos.categoria}\n\n` +
-      `✓ Guardada en Sheet\n` +
-      `✓ Agregada a Calendar`
-    );
+    let mensaje = `✅ Tarea URGENTE guardada!\n\n🔴 ${datos.tarea}\n🏷️ ${datos.categoria}\n\n✓ Guardada en Sheet\n✓ Agregada a Calendar`;
+    
+    if (datos.fecha) {
+      mensaje += `\n📅 ${datos.fecha.toLocaleString('es-AR')}`;
+    }
+    
+    if (datos.duracion) {
+      mensaje += `\n⏱️ Duración: ${datos.duracion} minutos`;
+    }
+    
+    await enviarMensaje(chatId, mensaje);
   } catch (error) {
     console.error('Error al guardar tarea urgente:', error);
     await enviarMensaje(chatId, '❌ Error: ' + error.message);
@@ -452,24 +506,191 @@ async function agregarTareaUrgente(categoria, tarea) {
 }
 
 // ============================================
+// GEMINI AI
+// ============================================
+
+async function analizarTareaConGemini(mensaje) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  
+  const prompt = `Analiza este mensaje de tarea y extrae la información en formato JSON.
+
+Categorías válidas:
+- Auto - Plata (gastos del auto)
+- Auto - Tiempo (tareas del auto, mantenimiento)
+- Casa (tareas generales del hogar)
+- Casa - Plata (gastos de la casa, servicios)
+- Estandarización (procesos, mejoras, organización)
+- Personal (cosas personales, salud mental, desarrollo)
+- Personas (reuniones, contactos, relaciones)
+- Salud (médicos, ejercicio, bienestar físico)
+- Trabajo (tareas laborales)
+- Facultad (estudio, universidad)
+
+Reglas para detectar fecha:
+- "mañana" = mañana
+- "pasado mañana" = dentro de 2 días
+- "el viernes", "el lunes" = ese día de la semana
+- "18 de abril", "25/04" = esa fecha específica
+- Si menciona hora: "3 PM", "10 AM", "15:30"
+
+Reglas para duración:
+- "1 hora", "30 minutos", "2 horas"
+- Si no especifica, null
+
+Mensaje: "${mensaje}"
+
+Responde SOLO con este JSON (sin markdown, sin explicaciones):
+{
+  "categoria": "categoría detectada o null",
+  "fecha": "descripción de fecha o null",
+  "hora": "hora o null",
+  "duracion": minutos como número o null
+}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.candidates && data.candidates[0].content.parts[0].text) {
+      const texto = data.candidates[0].content.parts[0].text.trim();
+      const jsonMatch = texto.match(/\{[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    }
+  } catch (error) {
+    console.error('Error Gemini:', error);
+  }
+  
+  return { categoria: null, fecha: null, hora: null, duracion: null };
+}
+
+function parsearFecha(descripcionFecha, hora) {
+  if (!descripcionFecha) return null;
+  
+  const ahora = new Date();
+  let fecha = new Date(ahora);
+  
+  const lower = descripcionFecha.toLowerCase();
+  
+  if (lower.includes('mañana') && !lower.includes('pasado')) {
+    fecha.setDate(fecha.getDate() + 1);
+  } else if (lower.includes('pasado mañana')) {
+    fecha.setDate(fecha.getDate() + 2);
+  } else if (lower.includes('lunes')) {
+    fecha = siguienteDiaSemana(1);
+  } else if (lower.includes('martes')) {
+    fecha = siguienteDiaSemana(2);
+  } else if (lower.includes('miércoles') || lower.includes('miercoles')) {
+    fecha = siguienteDiaSemana(3);
+  } else if (lower.includes('jueves')) {
+    fecha = siguienteDiaSemana(4);
+  } else if (lower.includes('viernes')) {
+    fecha = siguienteDiaSemana(5);
+  } else if (lower.includes('sábado') || lower.includes('sabado')) {
+    fecha = siguienteDiaSemana(6);
+  } else if (lower.includes('domingo')) {
+    fecha = siguienteDiaSemana(0);
+  }
+  
+  if (hora) {
+    const horaMatch = hora.match(/(\d+):?(\d*)\s*(am|pm)?/i);
+    if (horaMatch) {
+      let horas = parseInt(horaMatch[1]);
+      const minutos = parseInt(horaMatch[2] || '0');
+      const ampm = horaMatch[3];
+      
+      if (ampm && ampm.toLowerCase() === 'pm' && horas < 12) {
+        horas += 12;
+      } else if (ampm && ampm.toLowerCase() === 'am' && horas === 12) {
+        horas = 0;
+      }
+      
+      fecha.setHours(horas, minutos, 0, 0);
+    }
+  } else {
+    fecha.setHours(9, 0, 0, 0); // Por defecto 9 AM
+  }
+  
+  return fecha;
+}
+
+function siguienteDiaSemana(diaSemana) {
+  const hoy = new Date();
+  const hoyDia = hoy.getDay();
+  let diasHasta = diaSemana - hoyDia;
+  
+  if (diasHasta <= 0) {
+    diasHasta += 7;
+  }
+  
+  const fecha = new Date(hoy);
+  fecha.setDate(fecha.getDate() + diasHasta);
+  return fecha;
+}
+
+// ============================================
 // GOOGLE CALENDAR
 // ============================================
 
-async function crearEventoCalendar(categoria, tarea) {
+function obtenerColorCalendar(categoria) {
+  const colores = {
+    'Auto - Plata': '5',      // Amarillo
+    'Auto - Tiempo': '6',     // Naranja
+    'Casa': '9',              // Azul
+    'Casa - Plata': '7',      // Celeste
+    'Estandarización': '3',   // Morado
+    'Personal': '4',          // Rosa
+    'Personas': '10',         // Verde
+    'Salud': '11',            // Rojo
+    'Trabajo': '8',           // Gris
+    'Facultad': '2'           // Verde Lima
+  };
+  
+  return colores[categoria] || '1';
+}
+
+async function crearEventoCalendar(categoria, tarea, fecha = null, duracion = null) {
   const hoy = new Date();
-  const mañana = new Date(hoy);
-  mañana.setDate(mañana.getDate() + 1);
+  let start, end;
+  
+  if (fecha) {
+    // Si tiene fecha específica
+    start = { dateTime: fecha.toISOString() };
+    
+    if (duracion) {
+      const fechaFin = new Date(fecha);
+      fechaFin.setMinutes(fechaFin.getMinutes() + duracion);
+      end = { dateTime: fechaFin.toISOString() };
+    } else {
+      const fechaFin = new Date(fecha);
+      fechaFin.setHours(fechaFin.getHours() + 1);
+      end = { dateTime: fechaFin.toISOString() };
+    }
+  } else {
+    // Evento de todo el día
+    start = { date: hoy.toISOString().split('T')[0] };
+    const mañana = new Date(hoy);
+    mañana.setDate(mañana.getDate() + 1);
+    end = { date: mañana.toISOString().split('T')[0] };
+  }
   
   const event = {
     summary: `🔴 ${categoria} - ${tarea}`,
     description: 'Tarea urgente creada desde Telegram',
-    start: {
-      date: hoy.toISOString().split('T')[0]
-    },
-    end: {
-      date: mañana.toISOString().split('T')[0]
-    },
-    colorId: '11' // Rojo
+    start,
+    end,
+    colorId: obtenerColorCalendar(categoria)
   };
   
   await calendar.events.insert({
