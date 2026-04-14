@@ -83,12 +83,16 @@ async function procesarMensaje(chatId, mensaje, userId) {
     return;
   }
   
-  const tipo = detectarTipo(mensaje);
+  // Detectar tipo con Gemini
+  const tipo = await detectarTipoConGemini(mensaje);
   
   if (tipo === 'GASTO') {
     await iniciarGasto(chatId, mensaje, userId);
   } else if (tipo === 'TAREA') {
     await iniciarTarea(chatId, mensaje, userId);
+  } else if (tipo === 'CONVERSACION') {
+    const respuesta = await responderConversacionConGemini(mensaje);
+    await enviarMensaje(chatId, respuesta);
   } else {
     await enviarMensaje(chatId, 
       '❓ No entendí.\n\n' +
@@ -506,7 +510,97 @@ async function agregarTareaUrgente(categoria, tarea) {
 }
 
 // ============================================
-// GEMINI AI
+// GEMINI AI - DETECCIÓN DE TIPO
+// ============================================
+
+async function detectarTipoConGemini(mensaje) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  
+  const prompt = `Sos Boty, un asistente argentino copado que ayuda a registrar GASTOS y TAREAS.
+
+Analizá este mensaje y decidí qué tipo es:
+
+GASTO: si menciona que gastó/compró/pagó dinero, o empieza con un monto
+Ejemplos: "gasté 5000", "compré pan", "pagué la luz", "15000 en el super"
+
+TAREA: si es algo que tiene que hacer
+Ejemplos: "llamar al médico", "pagar la luz", "lavar los platos", "reunión mañana"
+
+CONVERSACION: saludos, preguntas, bardeos, cualquier otra cosa
+Ejemplos: "hola", "cómo estás", "sos re tonto", "no entiendo", "ayuda"
+
+Mensaje: "${mensaje}"
+
+Responde SOLO una palabra: GASTO, TAREA o CONVERSACION`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.candidates && data.candidates[0].content.parts[0].text) {
+      const respuesta = data.candidates[0].content.parts[0].text.trim().toUpperCase();
+      
+      if (respuesta.includes('GASTO')) return 'GASTO';
+      if (respuesta.includes('TAREA')) return 'TAREA';
+      if (respuesta.includes('CONVERSACION')) return 'CONVERSACION';
+    }
+  } catch (error) {
+    console.error('Error Gemini detectar tipo:', error);
+  }
+  
+  return 'DESCONOCIDO';
+}
+
+async function responderConversacionConGemini(mensaje) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  
+  const prompt = `Sos Boty, un asistente de Telegram argentino copado que ayuda a registrar gastos y tareas.
+
+Tu personalidad:
+- Hablás en argentino casual (dale, joya, che)
+- Si te saludan, saludás amigable y explicás qué hacés
+- Si te bardean, respondés con humor sin ofenderte
+- Si piden ayuda, explicás claro y conciso
+- Siempre recordás que pueden mandarte gastos o tareas
+
+Mensaje del usuario: "${mensaje}"
+
+Respondé en máximo 2-3 líneas, copado y útil:`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.candidates && data.candidates[0].content.parts[0].text) {
+      return data.candidates[0].content.parts[0].text.trim();
+    }
+  } catch (error) {
+    console.error('Error Gemini conversacion:', error);
+  }
+  
+  return '¡Hola! 👋 Soy Boty. Mandame tus gastos o tareas y las organizo por vos.';
+}
+
+// ============================================
+// GEMINI AI - ANÁLISIS DE TAREAS
 // ============================================
 
 async function analizarTareaConGemini(mensaje) {
