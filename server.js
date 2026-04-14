@@ -514,7 +514,9 @@ async function agregarTareaUrgente(categoria, tarea) {
 // ============================================
 
 async function detectarTipoConGemini(mensaje) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  console.log('🤖 Detectando tipo con Gemini:', mensaje);
+  
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `Sos Boty, un asistente argentino copado que ayuda a registrar GASTOS y TAREAS.
 
@@ -534,6 +536,9 @@ Mensaje: "${mensaje}"
 Responde SOLO una palabra: GASTO, TAREA o CONVERSACION`;
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5 seg timeout
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -541,27 +546,55 @@ Responde SOLO una palabra: GASTO, TAREA o CONVERSACION`;
         contents: [{
           parts: [{ text: prompt }]
         }]
-      })
+      }),
+      signal: controller.signal
     });
     
+    clearTimeout(timeout);
+    
     const data = await response.json();
+    console.log('📥 Gemini respondió:', JSON.stringify(data).substring(0, 200));
     
     if (data.candidates && data.candidates[0].content.parts[0].text) {
       const respuesta = data.candidates[0].content.parts[0].text.trim().toUpperCase();
+      console.log('✅ Tipo detectado:', respuesta);
       
       if (respuesta.includes('GASTO')) return 'GASTO';
       if (respuesta.includes('TAREA')) return 'TAREA';
       if (respuesta.includes('CONVERSACION')) return 'CONVERSACION';
     }
   } catch (error) {
-    console.error('Error Gemini detectar tipo:', error);
+    console.error('❌ Error Gemini detectar tipo:', error.message);
+    
+    // FALLBACK: detección simple si Gemini falla
+    const lower = mensaje.toLowerCase();
+    
+    if (/^\d+/.test(mensaje) || lower.includes('gast') || lower.includes('compré') || lower.includes('pagué')) {
+      console.log('⚡ Fallback: detectado como GASTO');
+      return 'GASTO';
+    }
+    
+    const palabrasTarea = ['lavar', 'limpiar', 'llamar', 'pagar', 'arreglar', 'revisar'];
+    if (palabrasTarea.some(p => lower.includes(p))) {
+      console.log('⚡ Fallback: detectado como TAREA');
+      return 'TAREA';
+    }
+    
+    const saludos = ['hola', 'hi', 'hey', 'buen dia', 'buenas'];
+    if (saludos.some(s => lower.includes(s))) {
+      console.log('⚡ Fallback: detectado como CONVERSACION');
+      return 'CONVERSACION';
+    }
   }
   
+  console.log('⚠️ No se pudo detectar tipo');
   return 'DESCONOCIDO';
 }
 
 async function responderConversacionConGemini(mensaje) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  console.log('💬 Generando respuesta de conversación');
+  
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `Sos Boty, un asistente de Telegram argentino copado que ayuda a registrar gastos y tareas.
 
@@ -577,6 +610,9 @@ Mensaje del usuario: "${mensaje}"
 Respondé en máximo 2-3 líneas, copado y útil:`;
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -584,19 +620,35 @@ Respondé en máximo 2-3 líneas, copado y útil:`;
         contents: [{
           parts: [{ text: prompt }]
         }]
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeout);
     
     const data = await response.json();
     
     if (data.candidates && data.candidates[0].content.parts[0].text) {
-      return data.candidates[0].content.parts[0].text.trim();
+      const respuesta = data.candidates[0].content.parts[0].text.trim();
+      console.log('✅ Respuesta generada');
+      return respuesta;
     }
   } catch (error) {
-    console.error('Error Gemini conversacion:', error);
+    console.error('❌ Error Gemini conversacion:', error.message);
   }
   
-  return '¡Hola! 👋 Soy Boty. Mandame tus gastos o tareas y las organizo por vos.';
+  // FALLBACK: respuesta simple
+  const lower = mensaje.toLowerCase();
+  
+  if (lower.includes('hola') || lower.includes('hey') || lower.includes('hi')) {
+    return '¡Hola! 👋 Soy Boty, te ayudo a registrar gastos y tareas. Mandame algo como:\n💰 "Gasté 5000 en el super"\n✅ "Llamar al médico mañana"';
+  }
+  
+  if (lower.includes('ayuda') || lower.includes('cómo') || lower.includes('como')) {
+    return '📝 Podés mandarme:\n💰 Gastos: "Gasté X en..."\n✅ Tareas: "Tengo que..." o "Llamar a..."';
+  }
+  
+  return '¡Dale! Mandame un gasto o una tarea y la registro para vos 😄';
 }
 
 // ============================================
