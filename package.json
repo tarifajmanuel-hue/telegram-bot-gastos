@@ -1,17 +1,13 @@
 {
-  "name": "telegram-bot-gastos",
+  "name": "oauth-setup",
   "version": "1.0.0",
-  "description": "Bot de Telegram para gastos y tareas",
-  "main": "server.js",
+  "description": "Script para obtener OAuth token",
+  "main": "get-oauth-token.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "start": "node get-oauth-token.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "node-fetch": "^2.7.0",
-    "googleapis": "^128.0.0"
+    "googleapis": "^128.0.0",
+    "open": "^8.4.0"
   }
 }
