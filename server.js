@@ -8,18 +8,23 @@ app.use(express.json());
 
 const TELEGRAM_TOKEN = '8400560729:AAHQbx4JthWEr8o3dccoUJgDw2lSnV_JO24';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
+
 // DEBUG - Ver variables de entorno
 console.log('=== VARIABLES DE ENTORNO ===');
 console.log('SHEET_ID existe?', !!process.env.SHEET_ID);
 console.log('GOOGLE_CLIENT_EMAIL existe?', !!process.env.GOOGLE_CLIENT_EMAIL);
 console.log('GOOGLE_PRIVATE_KEY existe?', !!process.env.GOOGLE_PRIVATE_KEY);
 console.log('GOOGLE_PRIVATE_KEY length:', process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.length : 0);
+
 // Configuración de Google Sheets
 const SHEET_ID = process.env.SHEET_ID;
-const SERVICE_ACCOUNT = {
-  client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  private_key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : ''
-};
+
+// Credenciales para JWT - ARREGLADO
+const serviceAccountAuth = new JWT({
+  email: process.env.GOOGLE_CLIENT_EMAIL,
+  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  scopes: ['https://www.googleapis.com/auth/spreadsheets']
+});
 
 // Contextos en memoria (temporal)
 const contextos = {};
@@ -359,11 +364,11 @@ async function finalizarTareaUrgente(chatId, userId, datos) {
 }
 
 // ============================================
-// GOOGLE SHEETS
+// GOOGLE SHEETS - ARREGLADO
 // ============================================
 
 async function agregarGasto(monto, categoria, descripcion, medioPago, cuotas) {
-  const doc = new GoogleSpreadsheet(SHEET_ID, new JWT(SERVICE_ACCOUNT));
+  const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
   await doc.loadInfo();
   
   const sheet = doc.sheetsByTitle['Gastos'];
@@ -382,7 +387,7 @@ async function agregarGasto(monto, categoria, descripcion, medioPago, cuotas) {
 }
 
 async function agregarTarea(categoria, prioridad, tarea) {
-  const doc = new GoogleSpreadsheet(SHEET_ID, new JWT(SERVICE_ACCOUNT));
+  const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
   await doc.loadInfo();
   
   const sheet = doc.sheetsByTitle['Tareas Específicas'];
@@ -398,13 +403,7 @@ async function agregarTarea(categoria, prioridad, tarea) {
 }
 
 async function agregarTareaUrgente(categoria, tarea) {
-  console.log('=== DEBUG agregarTareaUrgente ===');
-  console.log('SHEET_ID:', SHEET_ID);
-  console.log('CLIENT_EMAIL:', SERVICE_ACCOUNT.client_email);
-  console.log('PRIVATE_KEY existe?', !!SERVICE_ACCOUNT.private_key);
-  console.log('PRIVATE_KEY primeros 50 chars:', SERVICE_ACCOUNT.private_key ? SERVICE_ACCOUNT.private_key.substring(0, 50) : 'VACIO');
-  
-  const doc = new GoogleSpreadsheet(SHEET_ID, new JWT(SERVICE_ACCOUNT));
+  const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
   await doc.loadInfo();
   
   const sheet = doc.sheetsByTitle['Tareas Específicas'];
