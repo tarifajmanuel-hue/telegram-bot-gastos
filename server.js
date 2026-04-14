@@ -1,7 +1,6 @@
 const express = require('express');
 const fetch = require('node-fetch');
-const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { JWT } = require('google-auth-library');
+const { google } = require('googleapis');
 
 const app = express();
 app.use(express.json());
@@ -9,24 +8,24 @@ app.use(express.json());
 const TELEGRAM_TOKEN = '8400560729:AAHQbx4JthWEr8o3dccoUJgDw2lSnV_JO24';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
-// DEBUG - Ver variables de entorno
-console.log('=== VARIABLES DE ENTORNO ===');
-console.log('SHEET_ID existe?', !!process.env.SHEET_ID);
-console.log('GOOGLE_CLIENT_EMAIL existe?', !!process.env.GOOGLE_CLIENT_EMAIL);
-console.log('GOOGLE_PRIVATE_KEY existe?', !!process.env.GOOGLE_PRIVATE_KEY);
-console.log('GOOGLE_PRIVATE_KEY length:', process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.length : 0);
-
-// Configuración de Google Sheets
+// Configuración de Google
 const SHEET_ID = process.env.SHEET_ID;
 
-// Credenciales para JWT - ARREGLADO
-const serviceAccountAuth = new JWT({
-  email: process.env.GOOGLE_CLIENT_EMAIL,
-  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  scopes: ['https://www.googleapis.com/auth/spreadsheets']
+const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+    private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+  },
+  scopes: [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/calendar'
+  ]
 });
 
-// Contextos en memoria (temporal)
+const sheets = google.sheets({ version: 'v4', auth });
+const calendar = google.calendar({ version: 'v3', auth });
+
+// Contextos en memoria
 const contextos = {};
 
 // ============================================
@@ -37,7 +36,6 @@ app.post('/webhook', async (req, res) => {
   const update = req.body;
   
   try {
-    // Procesar mensaje de texto
     if (update.message && update.message.text) {
       const chatId = update.message.chat.id;
       const mensaje = update.message.text;
@@ -46,7 +44,6 @@ app.post('/webhook', async (req, res) => {
       await procesarMensaje(chatId, mensaje, userId);
     }
     
-    // Procesar botón
     if (update.callback_query) {
       const chatId = update.callback_query.message.chat.id;
       const userId = update.callback_query.from.id;
@@ -71,7 +68,6 @@ app.post('/webhook', async (req, res) => {
 async function procesarMensaje(chatId, mensaje, userId) {
   const contexto = contextos[userId];
   
-  // Cancelar
   if (mensaje.toLowerCase() === 'cancelar' || mensaje.toLowerCase() === 'volver') {
     if (contexto) {
       delete contextos[userId];
@@ -94,11 +90,8 @@ async function procesarMensaje(chatId, mensaje, userId) {
   } else {
     await enviarMensaje(chatId, 
       '❓ No entendí.\n\n' +
-      '💰 Para gastos:\n' +
-      '• "Gasté 15000 en el super"\n\n' +
-      '✅ Para tareas:\n' +
-      '• "Lavar los platos"\n' +
-      '• "Arreglar extractor urgente"'
+      '💰 Para gastos: "Gasté 15000 en el super"\n' +
+      '✅ Para tareas: "Lavar los platos" o "Arreglar heladera urgente"'
     );
   }
 }
@@ -124,7 +117,7 @@ async function procesarBoton(chatId, userId, data, messageId, callbackId) {
     contexto.datos.categoria = categorias[num - 1];
     
     await editarMensaje(chatId, messageId, '💰 Categoría: ' + categorias[num - 1]);
-    await enviarMensaje(chatId, '📝 ¿Qué compraste?\n\n(O escribí "cancelar")');
+    await enviarMensaje(chatId, '📝 ¿Qué compraste?');
     
     contexto.esperando = 'DESCRIPCION';
     
@@ -278,8 +271,6 @@ async function iniciarTarea(chatId, mensaje, userId) {
 // ============================================
 
 async function procesarRespuesta(chatId, mensaje, contexto) {
-  const userId = contexto.userId;
-  
   if (contexto.tipo === 'GASTO') {
     if (contexto.esperando === 'MONTO') {
       const monto = parseInt(mensaje);
@@ -324,97 +315,165 @@ async function procesarRespuesta(chatId, mensaje, contexto) {
 async function finalizarGasto(chatId, userId, datos) {
   const cuotas = datos.cuotas || 1;
   
-  // Guardar en Sheet
-  await agregarGasto(datos.monto, datos.categoria, datos.descripcion, datos.medioPago, cuotas);
-  
-  await enviarMensaje(chatId, 
-    `✅ Gasto guardado!\n\n` +
-    `💰 $${datos.monto.toLocaleString('es-AR')} - ${datos.categoria}\n` +
-    `📝 ${datos.descripcion}\n` +
-    `💳 ${datos.medioPago}${cuotas > 1 ? ` (${cuotas} cuotas)` : ''}`
-  );
+  try {
+    await agregarGasto(datos.monto, datos.categoria, datos.descripcion, datos.medioPago, cuotas);
+    
+    await enviarMensaje(chatId, 
+      `✅ Gasto guardado!\n\n` +
+      `💰 $${datos.monto.toLocaleString('es-AR')} - ${datos.categoria}\n` +
+      `📝 ${datos.descripcion}\n` +
+      `💳 ${datos.medioPago}${cuotas > 1 ? ` (${cuotas} cuotas)` : ''}`
+    );
+  } catch (error) {
+    console.error('Error al guardar gasto:', error);
+    await enviarMensaje(chatId, '❌ Error al guardar en Sheet');
+  }
   
   delete contextos[userId];
 }
 
 async function finalizarTarea(chatId, userId, datos) {
-  await agregarTarea(datos.categoria, datos.prioridad, datos.tarea);
-  
-  await enviarMensaje(chatId, 
-    `✅ Tarea guardada!\n\n` +
-    `📝 ${datos.tarea}\n` +
-    `🏷️ ${datos.categoria} - ${datos.prioridad}`
-  );
+  try {
+    await agregarTarea(datos.categoria, datos.prioridad, datos.tarea);
+    
+    await enviarMensaje(chatId, 
+      `✅ Tarea guardada!\n\n` +
+      `📝 ${datos.tarea}\n` +
+      `🏷️ ${datos.categoria} - ${datos.prioridad}`
+    );
+  } catch (error) {
+    console.error('Error al guardar tarea:', error);
+    await enviarMensaje(chatId, '❌ Error al guardar en Sheet');
+  }
   
   delete contextos[userId];
 }
 
 async function finalizarTareaUrgente(chatId, userId, datos) {
-  await agregarTareaUrgente(datos.categoria, datos.tarea);
-  
-  await enviarMensaje(chatId, 
-    `✅ Tarea URGENTE guardada!\n\n` +
-    `🔴 ${datos.tarea}\n` +
-    `🏷️ ${datos.categoria}\n\n` +
-    `✓ Guardada en Sheet\n` +
-    `✓ Agregada a Calendar`
-  );
+  try {
+    await agregarTareaUrgente(datos.categoria, datos.tarea);
+    await crearEventoCalendar(datos.categoria, datos.tarea);
+    
+    await enviarMensaje(chatId, 
+      `✅ Tarea URGENTE guardada!\n\n` +
+      `🔴 ${datos.tarea}\n` +
+      `🏷️ ${datos.categoria}\n\n` +
+      `✓ Guardada en Sheet\n` +
+      `✓ Agregada a Calendar`
+    );
+  } catch (error) {
+    console.error('Error al guardar tarea urgente:', error);
+    await enviarMensaje(chatId, '❌ Error: ' + error.message);
+  }
   
   delete contextos[userId];
 }
 
 // ============================================
-// GOOGLE SHEETS - ARREGLADO
+// GOOGLE SHEETS
 // ============================================
 
 async function agregarGasto(monto, categoria, descripcion, medioPago, cuotas) {
-  const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
-  await doc.loadInfo();
-  
-  const sheet = doc.sheetsByTitle['Gastos'];
   const fecha = new Date();
   
-  await sheet.addRow({
-    'Fecha': fecha.toLocaleDateString('es-AR'),
-    'Monto': monto,
-    'Categoría': categoria,
-    'Descripción': descripcion,
-    'Medio de Pago': medioPago,
-    'Cuotas': cuotas,
-    'Mes': fecha.toLocaleDateString('es-AR', { month: 'long' }),
-    'Año': fecha.getFullYear()
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: 'Gastos!A:K',
+    valueInputOption: 'USER_ENTERED',
+    resource: {
+      values: [[
+        '', // ID (auto)
+        fecha.toLocaleDateString('es-AR'),
+        monto,
+        categoria,
+        descripcion,
+        medioPago,
+        cuotas,
+        `1/${cuotas}`,
+        fecha.toLocaleDateString('es-AR', { month: 'long' }),
+        fecha.getFullYear(),
+        ''
+      ]]
+    }
   });
 }
 
 async function agregarTarea(categoria, prioridad, tarea) {
-  const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
-  await doc.loadInfo();
+  const fecha = new Date();
   
-  const sheet = doc.sheetsByTitle['Tareas Específicas'];
-  
-  await sheet.addRow({
-    'Fecha Ingreso': new Date().toLocaleDateString('es-AR'),
-    'Categoría': categoria,
-    'Prioridad': prioridad,
-    'Tarea': tarea,
-    'Estado': 'Pendiente',
-    'En Calendar': 'No'
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: 'Tareas Específicas!A:L',
+    valueInputOption: 'USER_ENTERED',
+    resource: {
+      values: [[
+        '', // ID (auto)
+        fecha.toLocaleDateString('es-AR'),
+        categoria,
+        prioridad,
+        tarea,
+        '', // Deadline
+        '', // Día planificado
+        '', // Hora
+        'Pendiente',
+        'No', // En Calendar
+        '', // Notas
+        '' // Fecha completada
+      ]]
+    }
   });
 }
 
 async function agregarTareaUrgente(categoria, tarea) {
-  const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
-  await doc.loadInfo();
+  const fecha = new Date();
   
-  const sheet = doc.sheetsByTitle['Tareas Específicas'];
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: 'Tareas Específicas!A:L',
+    valueInputOption: 'USER_ENTERED',
+    resource: {
+      values: [[
+        '', // ID (auto)
+        fecha.toLocaleDateString('es-AR'),
+        categoria,
+        'Urgente',
+        tarea,
+        '', // Deadline
+        fecha.toLocaleDateString('es-AR'), // Día planificado
+        '', // Hora
+        'Pendiente',
+        'Sí', // En Calendar
+        '', // Notas
+        '' // Fecha completada
+      ]]
+    }
+  });
+}
+
+// ============================================
+// GOOGLE CALENDAR
+// ============================================
+
+async function crearEventoCalendar(categoria, tarea) {
+  const hoy = new Date();
+  const mañana = new Date(hoy);
+  mañana.setDate(mañana.getDate() + 1);
   
-  await sheet.addRow({
-    'Fecha Ingreso': new Date().toLocaleDateString('es-AR'),
-    'Categoría': categoria,
-    'Prioridad': 'Urgente',
-    'Tarea': tarea,
-    'Estado': 'Pendiente',
-    'En Calendar': 'Sí'
+  const event = {
+    summary: `🔴 ${categoria} - ${tarea}`,
+    description: 'Tarea urgente creada desde Telegram',
+    start: {
+      date: hoy.toISOString().split('T')[0]
+    },
+    end: {
+      date: mañana.toISOString().split('T')[0]
+    },
+    colorId: '11' // Rojo
+  };
+  
+  await calendar.events.insert({
+    calendarId: 'primary',
+    resource: event
   });
 }
 
