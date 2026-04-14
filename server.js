@@ -512,39 +512,50 @@ async function agregarTareaUrgente(categoria, tarea) {
 async function analizarTareaConGemini(mensaje) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
   
-  const prompt = `Analiza este mensaje de tarea y extrae la información en formato JSON.
+  const prompt = `Sos un asistente que categoriza tareas inteligentemente. Analiza este mensaje y extrae información.
 
-Categorías válidas:
-- Auto - Plata (gastos del auto)
-- Auto - Tiempo (tareas del auto, mantenimiento)
-- Casa (tareas generales del hogar)
-- Casa - Plata (gastos de la casa, servicios)
-- Estandarización (procesos, mejoras, organización)
-- Personal (cosas personales, salud mental, desarrollo)
-- Personas (reuniones, contactos, relaciones)
-- Salud (médicos, ejercicio, bienestar físico)
-- Trabajo (tareas laborales)
-- Facultad (estudio, universidad)
+CATEGORÍAS Y EJEMPLOS:
 
-Reglas para detectar fecha:
+1. Auto - Plata: pagar seguro, cargar nafta, pagar patente, multas, gastos del auto
+2. Auto - Tiempo: cambiar aceite, service, lavar auto, revisar frenos, llevar a mecánico
+3. Casa: arreglar algo en casa, pintar, organizar, limpiar pileta, jardinería
+4. Casa - Plata: pagar luz, gas, alquiler, expensas, internet, servicios
+5. Estandarización: mejorar procesos, documentar, optimizar, organizar sistemas
+6. Personal: gym, psicólogo, turno médico personal, comprar ropa, corte de pelo
+7. Personas: reunión, llamar a alguien, juntarse, visitar, evento social
+8. Salud: médico, estudios, ejercicio físico, nutricionista, terapia
+9. Trabajo: tareas laborales, reuniones de trabajo, proyectos, presentaciones
+10. Facultad: estudiar, parcial, TP, clases, leer para la facultad
+
+REGLAS PARA DETECTAR FECHA Y HORA:
 - "mañana" = mañana
-- "pasado mañana" = dentro de 2 días
-- "el viernes", "el lunes" = ese día de la semana
-- "18 de abril", "25/04" = esa fecha específica
-- Si menciona hora: "3 PM", "10 AM", "15:30"
+- "pasado mañana" = dentro de 2 días  
+- "hoy" = hoy
+- "el viernes", "el lunes" = ese día específico
+- "18 de abril", "25/04" = fecha exacta
+- Horas: "3 PM", "15:00", "10 de la mañana"
 
-Reglas para duración:
-- "1 hora", "30 minutos", "2 horas"
-- Si no especifica, null
+REGLAS PARA DURACIÓN:
+- "1 hora", "30 minutos", "2 horas" = duración específica
+- "media hora" = 30 minutos
+- Si no menciona duración = null
 
-Mensaje: "${mensaje}"
+Mensaje del usuario: "${mensaje}"
 
-Responde SOLO con este JSON (sin markdown, sin explicaciones):
+PIENSA PASO A PASO:
+1. ¿De qué se trata esta tarea?
+2. ¿A qué categoría pertenece mejor?
+3. ¿Menciona alguna fecha o día?
+4. ¿Menciona alguna hora?
+5. ¿Menciona cuánto tiempo le va a llevar?
+
+Responde SOLO con JSON (sin markdown, sin \`\`\`):
 {
-  "categoria": "categoría detectada o null",
+  "categoria": "nombre exacto de categoría",
+  "razonamiento": "por qué elegiste esa categoría",
   "fecha": "descripción de fecha o null",
-  "hora": "hora o null",
-  "duracion": minutos como número o null
+  "hora": "hora mencionada o null",
+  "duracion": número de minutos o null
 }`;
 
   try {
@@ -562,10 +573,16 @@ Responde SOLO con este JSON (sin markdown, sin explicaciones):
     
     if (data.candidates && data.candidates[0].content.parts[0].text) {
       const texto = data.candidates[0].content.parts[0].text.trim();
-      const jsonMatch = texto.match(/\{[\s\S]*\}/);
+      
+      // Limpiar markdown si existe
+      let jsonText = texto.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
       
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const resultado = JSON.parse(jsonMatch[0]);
+        console.log('Gemini detectó:', resultado);
+        return resultado;
       }
     }
   } catch (error) {
