@@ -516,7 +516,7 @@ async function agregarTareaUrgente(categoria, tarea) {
 async function detectarTipoConGemini(mensaje) {
   console.log('🤖 Detectando tipo con Gemini:', mensaje);
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `Sos Boty, un asistente argentino copado que ayuda a registrar GASTOS y TAREAS.
 
@@ -594,7 +594,7 @@ Responde SOLO una palabra: GASTO, TAREA o CONVERSACION`;
 async function responderConversacionConGemini(mensaje) {
   console.log('💬 Generando respuesta de conversación');
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `Sos Boty, un asistente de Telegram argentino copado que ayuda a registrar gastos y tareas.
 
@@ -656,7 +656,7 @@ Respondé en máximo 2-3 líneas, copado y útil:`;
 // ============================================
 
 async function analizarTareaConGemini(mensaje) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `Sos un asistente que categoriza tareas inteligentemente. Analiza este mensaje y extrae información.
 
