@@ -10,10 +10,10 @@ const TELEGRAM_TOKEN = '8400560729:AAHQbx4JthWEr8o3dccoUJgDw2lSnV_JO24';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
 // Configuración de Google Sheets
-const SHEET_ID = 'TU_SHEET_ID_AQUI'; // Poner el ID del Sheet
+const SHEET_ID = process.env.SHEET_ID;
 const SERVICE_ACCOUNT = {
   client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+  private_key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : ''
 };
 
 // Contextos en memoria (temporal)
