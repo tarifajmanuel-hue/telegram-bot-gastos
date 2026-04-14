@@ -516,7 +516,7 @@ async function agregarTareaUrgente(categoria, tarea) {
 async function detectarTipoConGemini(mensaje) {
   console.log('🤖 Detectando tipo con Gemini:', mensaje);
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `Sos Boty, un asistente argentino copado que ayuda a registrar GASTOS y TAREAS.
 
@@ -594,7 +594,7 @@ Responde SOLO una palabra: GASTO, TAREA o CONVERSACION`;
 async function responderConversacionConGemini(mensaje) {
   console.log('💬 Generando respuesta de conversación');
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `Sos Boty, un asistente de Telegram argentino copado que ayuda a registrar gastos y tareas.
 
