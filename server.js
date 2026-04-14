@@ -18,12 +18,12 @@ const auth = new google.auth.GoogleAuth({
   },
   scopes: [
     'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/calendar'
+    'https://www.googleapis.com/auth/tasks'
   ]
 });
 
 const sheets = google.sheets({ version: 'v4', auth });
-const calendar = google.calendar({ version: 'v3', auth });
+const tasks = google.tasks({ version: 'v1', auth });
 
 // Contextos en memoria
 const contextos = {};
@@ -352,14 +352,14 @@ async function finalizarTarea(chatId, userId, datos) {
 async function finalizarTareaUrgente(chatId, userId, datos) {
   try {
     await agregarTareaUrgente(datos.categoria, datos.tarea);
-    await crearEventoCalendar(datos.categoria, datos.tarea);
+    await crearTareaEnTasks(datos.categoria, datos.tarea);
     
     await enviarMensaje(chatId, 
       `✅ Tarea URGENTE guardada!\n\n` +
       `🔴 ${datos.tarea}\n` +
       `🏷️ ${datos.categoria}\n\n` +
       `✓ Guardada en Sheet\n` +
-      `✓ Agregada a Calendar`
+      `✓ Agregada a Google Tasks`
     );
   } catch (error) {
     console.error('Error al guardar tarea urgente:', error);
@@ -451,30 +451,29 @@ async function agregarTareaUrgente(categoria, tarea) {
 }
 
 // ============================================
-// GOOGLE CALENDAR
+// GOOGLE TASKS
 // ============================================
 
-async function crearEventoCalendar(categoria, tarea) {
-  const hoy = new Date();
-  const mañana = new Date(hoy);
-  mañana.setDate(mañana.getDate() + 1);
-  
-  const event = {
-    summary: `🔴 ${categoria} - ${tarea}`,
-    description: 'Tarea urgente creada desde Telegram',
-    start: {
-      date: hoy.toISOString().split('T')[0]
-    },
-    end: {
-      date: mañana.toISOString().split('T')[0]
-    },
-    colorId: '11' // Rojo
-  };
-  
-  await calendar.events.insert({
-    calendarId: 'primary',
-    resource: event
-  });
+async function crearTareaEnTasks(categoria, tarea) {
+  try {
+    // Primero obtener la lista de tareas por defecto
+    const taskLists = await tasks.tasklists.list();
+    const defaultList = taskLists.data.items[0].id;
+    
+    const hoy = new Date();
+    
+    await tasks.tasks.insert({
+      tasklist: defaultList,
+      resource: {
+        title: `🔴 ${categoria} - ${tarea}`,
+        notes: 'Tarea urgente creada desde Telegram',
+        due: hoy.toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error al crear tarea en Google Tasks:', error);
+    throw error;
+  }
 }
 
 // ============================================
